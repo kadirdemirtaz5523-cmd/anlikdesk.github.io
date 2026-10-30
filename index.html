@@ -78,13 +78,13 @@
             const payload = JSON.stringify({
                 baslik: yeniBaslik,
                 ozet: yeniOzet,
-                msg_id: msgId
+                msg_id: String(msgId)
             });
 
             try {
                 tg.sendData(payload);
             } catch(e) {
-                alert("Hata oluştu: " + e.message);
+                alert("Hata: " + e.message);
             }
             tg.close();
         }
