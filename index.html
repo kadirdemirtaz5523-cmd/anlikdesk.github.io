@@ -8,8 +8,8 @@
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background-color: var(--tg-theme-bg-color, #17212b);
-            color: var(--tg-theme-text-color, #ffffff);
+            background-color: #17212b;
+            color: #ffffff;
             padding: 16px;
             margin: 0;
         }
@@ -19,16 +19,16 @@
             font-size: 12px;
             font-weight: 600;
             margin-bottom: 6px;
-            color: var(--tg-theme-hint-color, #7f91a4);
+            color: #7f91a4;
             text-transform: uppercase;
         }
         input, textarea {
             width: 100%;
             padding: 12px;
             border-radius: 8px;
-            border: 1px solid var(--tg-theme-secondary-bg-color, #232e3c);
-            background-color: var(--tg-theme-secondary-bg-color, #242f3d);
-            color: var(--tg-theme-text-color, #ffffff);
+            border: 1px solid #232e3c;
+            background-color: #242f3d;
+            color: #ffffff;
             font-size: 15px;
             box-sizing: border-box;
             outline: none;
@@ -59,7 +59,7 @@
         <textarea id="ozet" placeholder="Özet girin..."></textarea>
     </div>
 
-    <button class="btn-submit" onclick="gonder()">Görseli Yeniden Oluştur</button>
+    <button class="btn-submit" id="btnSubmit" onclick="gonder()">Görseli Yeniden Oluştur</button>
 
     <script>
         const tg = window.Telegram.WebApp;
@@ -70,19 +70,29 @@
         document.getElementById('baslik').value = urlParams.get('baslik') || '';
         document.getElementById('ozet').value = urlParams.get('ozet') || '';
 
-        function gonder() {
+        async function gonder() {
+            const btn = document.getElementById('btnSubmit');
+            btn.innerText = "Gönderiliyor...";
+            btn.disabled = true;
+
             const yeniBaslik = document.getElementById('baslik').value;
             const yeniOzet = document.getElementById('ozet').value;
             const msgId = urlParams.get('msg_id');
+            const botToken = "9156283686:AAF-b7B8Nt2GP2SO7XT95xYBEVtvweowtVA";
+            const chatId = "1192631792";
 
-            const payload = JSON.stringify({
-                baslik: yeniBaslik,
-                ozet: yeniOzet,
-                msg_id: msgId
-            });
+            const metin = `✏️ **GÖRSEL DÜZELTME TALEBİ**\n\n**Mesaj ID:** ${msgId}\n**Yeni Başlık:** ${yeniBaslik}\n**Yeni Özet:** ${yeniOzet}`;
 
             try {
-                tg.sendData(payload);
+                await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: chatId,
+                        text: metin,
+                        parse_mode: 'Markdown'
+                    })
+                });
             } catch (e) {
                 console.error(e);
             }
