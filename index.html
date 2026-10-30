@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AnlıkDesk - Metin Düzenle</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--tg-theme-bg-color, #17212b);
+            color: var(--tg-theme-text-color, #ffffff);
+            padding: 16px;
+            margin: 0;
+        }
+        .form-group {
+            margin-bottom: 16px;
+        }
+        label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: var(--tg-theme-hint-color, #7f91a4);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid var(--tg-theme-secondary-bg-color, #232e3c);
+            background-color: var(--tg-theme-secondary-bg-color, #242f3d);
+            color: var(--tg-theme-text-color, #ffffff);
+            font-size: 15px;
+            box-sizing: border-box;
+            outline: none;
+        }
+        input:focus, textarea:focus {
+            border-color: #2481cc;
+        }
+        textarea {
+            height: 100px;
+            resize: vertical;
+        }
+        .btn-submit {
+            width: 100%;
+            padding: 14px;
+            background-color: #2481cc;
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        .btn-submit:active {
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div class="form-group">
+        <label for="baslik">Haber Başlığı</label>
+        <input type="text" id="baslik" placeholder="Başlık girin...">
+    </div>
+    
+    <div class="form-group">
+        <label for="ozet">Haber Özeti / Spot</label>
+        <textarea id="ozet" placeholder="Özet girin..."></textarea>
+    </div>
+
+    <button class="btn-submit" onclick="gonder()">Görseli Yeniden Oluştur</button>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand(); // Pencereyi tam ekran yap
+
+        // URL parametrelerinden mevcut metinleri çekip kutulara doldur
+        const urlParams = new URLSearchParams(window.location.search);
+        document.getElementById('baslik').value = urlParams.get('baslik') || '';
+        document.getElementById('ozet').value = urlParams.get('ozet') || '';
+
+        function gonder() {
+            const yeniBaslik = document.getElementById('baslik').value;
+            const yeniOzet = document.getElementById('ozet').value;
+
+            // Verileri Telegram Bota geri gönder
+            tg.sendData(JSON.stringify({
+                baslik: yeniBaslik,
+                ozet: yeniOzet,
+                msg_id: urlParams.get('msg_id')
+            }));
+
+            tg.close();
+        }
+    </script>
+</body>
+</html>
