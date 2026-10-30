@@ -59,7 +59,7 @@
         <textarea id="ozet" placeholder="Özet girin..."></textarea>
     </div>
 
-    <button class="btn-submit" onclick="gonder()">Görseli Yeniden Oluştur</button>
+    <button class="btn-submit" id="btnSubmit" onclick="gonder()">Görseli Yeniden Oluştur</button>
 
     <script>
         const tg = window.Telegram.WebApp;
@@ -70,16 +70,32 @@
         document.getElementById('baslik').value = urlParams.get('baslik') || '';
         document.getElementById('ozet').value = urlParams.get('ozet') || '';
 
-        function gonder() {
+        async function gonder() {
+            const btn = document.getElementById('btnSubmit');
+            btn.innerText = "Gönderiliyor...";
+            btn.disabled = true;
+
             const yeniBaslik = document.getElementById('baslik').value;
             const yeniOzet = document.getElementById('ozet').value;
+            const msgId = urlParams.get('msg_id') || '0';
 
-            const data = {
-                baslik: yeniBaslik,
-                ozet: yeniOzet
-            };
+            const botToken = "9156283686:AAF-b7B8Nt2GP2SO7XT95xYBEVtvweowtVA";
+            const chatId = "1192631792";
 
-            tg.sendData(JSON.stringify(data));
+            const iletiMetni = `/duzelt ID:${msgId}\nBASLIK:${yeniBaslik}\nOZET:${yeniOzet}`;
+
+            try {
+                await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: chatId,
+                        text: iletiMetni
+                    })
+                });
+            } catch (e) {
+                console.error(e);
+            }
             tg.close();
         }
     </script>
