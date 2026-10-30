@@ -1,100 +1,304 @@
-<!DOCTYPE html>
-<html lang="tr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AnlıkDesk - Metin Düzenle</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--tg-theme-bg-color, #17212b);
-            color: var(--tg-theme-text-color, #ffffff);
-            padding: 16px;
-            margin: 0;
-        }
-        .form-group {
-            margin-bottom: 16px;
-        }
-        label {
-            display: block;
-            font-size: 13px;
-            font-weight: 600;
-            margin-bottom: 6px;
-            color: var(--tg-theme-hint-color, #7f91a4);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        input, textarea {
-            width: 100%;
-            padding: 12px;
-            border-radius: 8px;
-            border: 1px solid var(--tg-theme-secondary-bg-color, #232e3c);
-            background-color: var(--tg-theme-secondary-bg-color, #242f3d);
-            color: var(--tg-theme-text-color, #ffffff);
-            font-size: 15px;
-            box-sizing: border-box;
-            outline: none;
-        }
-        input:focus, textarea:focus {
-            border-color: #2481cc;
-        }
-        textarea {
-            height: 100px;
-            resize: vertical;
-        }
-        .btn-submit {
-            width: 100%;
-            padding: 14px;
-            background-color: #2481cc;
-            color: #ffffff;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            margin-top: 10px;
-        }
-        .btn-submit:active {
-            opacity: 0.9;
-        }
-    </style>
-</head>
-<body>
-    <div class="form-group">
-        <label for="baslik">Haber Başlığı</label>
-        <input type="text" id="baslik" placeholder="Başlık girin...">
-    </div>
+import os
+import re
+import json
+import urllib.parse
+import requests
+import feedparser
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from telegram.request import HTTPXRequest
+
+# ================= KULLANICI BİLGİLERİ =================
+BOT_TOKEN = "9156283686:AAF-b7B8Nt2GP2SO7XT95xYBEVtvweowtVA"
+CHAT_ID = "1192631792"
+WEBAPP_BASE_URL = "https://kadirdemirtaz5523-cmd.github.io/anlikdesk.github.io/index.html"
+
+HABER_KAYNAKLARI = [
+    {"ad": "Anadolu Ajansı", "url": "https://www.aa.com.tr/tr/rss/default?cat=guncel"},
+    {"ad": "TRT Haber", "url": "https://www.trthaber.com/gundem_articles.rss"},
+    {"ad": "NTV Haber", "url": "https://www.ntv.com.tr/gundem.rss"},
+    {"ad": "Ensonhaber", "url": "https://www.ensonhaber.com/rss/ensonhaber.xml"},
+    {"ad": "Resmi Gazete", "url": "https://www.resmigazete.gov.tr/rss/resmigazete.xml"}
+]
+
+gonderilen_haberler = set()
+aktif_haberler = {}
+
+# Gelişmiş Haber Resmi Çekme
+def haber_resmi_bul(entry):
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     
-    <div class="form-group">
-        <label for="ozet">Haber Özeti / Spot</label>
-        <textarea id="ozet" placeholder="Özet girin..."></textarea>
-    </div>
+    if 'enclosures' in entry and len(entry.enclosures) > 0:
+        for enc in entry.enclosures:
+            href = enc.get('href', '')
+            if enc.get('type', '').startswith('image') or href.endswith(('.jpg', '.jpeg', '.png', '.webp')):
+                return href
+            
+    if 'media_content' in entry and len(entry.media_content) > 0:
+        for media in entry.media_content:
+            if 'url' in media:
+                return media['url']
+                
+    if 'media_thumbnail' in entry and len(entry.media_thumbnail) > 0:
+        return entry.media_thumbnail[0].get('url')
 
-    <button class="btn-submit" onclick="gonder()">Görseli Yeniden Oluştur</button>
+    summary = entry.get('summary', '') or entry.get('description', '')
+    match = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', summary)
+    if match:
+        return match.group(1)
 
-    <script>
-        const tg = window.Telegram.WebApp;
-        tg.expand(); // Pencereyi tam ekran yap
+    try:
+        haber_url = entry.get('link')
+        if haber_url:
+            resp = requests.get(haber_url, headers=headers, timeout=5)
+            if resp.status_code == 200:
+                og_match = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', resp.text)
+                if not og_match:
+                    og_match = re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']', resp.text)
+                if og_match:
+                    return og_match.group(1)
+    except Exception as e:
+        print(f"[LOG] Sayfadan og:image çekme hatası: {e}")
 
-        // URL parametrelerinden mevcut metinleri çekip kutulara doldur
-        const urlParams = new URLSearchParams(window.location.search);
-        document.getElementById('baslik').value = urlParams.get('baslik') || '';
-        document.getElementById('ozet').value = urlParams.get('ozet') || '';
+    return None
 
-        function gonder() {
-            const yeniBaslik = document.getElementById('baslik').value;
-            const yeniOzet = document.getElementById('ozet').value;
+def ozet_temizle(raw_html):
+    clean = re.sub(r'<[^>]+>', '', raw_html)
+    clean = clean.strip().replace('\n', ' ')
+    return clean[:130] + "..." if len(clean) > 130 else clean
 
-            // Verileri Telegram Bota geri gönder
-            tg.sendData(JSON.stringify({
-                baslik: yeniBaslik,
-                ozet: yeniOzet,
-                msg_id: urlParams.get('msg_id')
-            }));
+def metni_sar(metin, font, max_genislik, draw):
+    kelimeler = metin.split()
+    satirlar = []
+    mevcut_satir = ""
+    
+    for kelime in kelimeler:
+        test_satir = f"{mevcut_satir} {kelime}".strip()
+        bbox = draw.textbbox((0, 0), test_satir, font=font)
+        genislik = bbox[2] - bbox[0]
+        if genislik <= max_genislik:
+            mevcut_satir = test_satir
+        else:
+            if mevcut_satir:
+                satirlar.append(mevcut_satir)
+            mevcut_satir = kelime
+    if mevcut_satir:
+        satirlar.append(mevcut_satir)
+    return satirlar
 
-            tg.close();
-        }
-    </script>
-</body>
-</html>
+# ================= GÖRSEL OLUŞTURMA MOTORU =================
+def gorsel_hazirla(haber_resim_url, baslik_metni, ozet_metni, kaynak_adi):
+    sablon_yolu = "sablon.jpg"
+    if not os.path.exists(sablon_yolu):
+        print("HATA: sablon.jpg bulunamadı!")
+        return None
+
+    tuval = Image.open(sablon_yolu).convert("RGB")
+    
+    img_x, img_y = 160, 420
+    img_w, img_h = 1728, 980
+
+    haber_resmi = None
+    if haber_resim_url:
+        try:
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+            resim_resp = requests.get(haber_resim_url, headers=headers, timeout=10)
+            if resim_resp.status_code == 200:
+                raw_image = Image.open(BytesIO(resim_resp.content)).convert("RGB")
+                haber_resmi = raw_image.resize((img_w, img_h), Image.Resampling.LANCZOS)
+        except Exception as e:
+            print(f"[LOG] Resim işleme hatası: {e}")
+
+    if haber_resmi is None:
+        haber_resmi = Image.new("RGB", (img_w, img_h), (25, 32, 45))
+
+    tuval.paste(haber_resmi, (img_x, img_y))
+    cizim = ImageDraw.Draw(tuval)
+    
+    try:
+        baslik_font = ImageFont.truetype("arialbd.ttf", 62)
+        ozet_font = ImageFont.truetype("arial.ttf", 38)
+        kaynak_font = ImageFont.truetype("arialbd.ttf", 36)
+    except:
+        baslik_font = ImageFont.load_default()
+        ozet_font = ImageFont.load_default()
+        kaynak_font = ImageFont.load_default()
+        
+    text_x = 160
+    text_y = 1440
+    max_text_width = 1728
+    
+    # Başlık
+    satirlar_baslik = metni_sar(baslik_metni, baslik_font, max_text_width, cizim)
+    y_pos = text_y
+    for satir in satirlar_baslik[:2]:
+        cizim.text((text_x, y_pos), satir, fill="white", font=baslik_font)
+        y_pos += 75
+        
+    # Özet Metni
+    if ozet_metni:
+        y_pos += 15
+        satirlar_ozet = metni_sar(ozet_metni, ozet_font, max_text_width, cizim)
+        for satir in satirlar_ozet[:2]:
+            cizim.text((text_x, y_pos), satir, fill=(210, 215, 225), font=ozet_font)
+            y_pos += 50
+        
+    # Kaynak Adı
+    kaynak_x = 200
+    kaynak_y = 1860
+    cizim.text((kaynak_x, kaynak_y), kaynak_adi.upper(), fill="white", font=kaynak_font)
+    
+    cikti_yolu = "sonuc.png"
+    tuval.save(cikti_yolu)
+    return cikti_yolu
+
+# ================= TELEGRAM BOTU & WEBAPP ONAY =================
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("AnlıkDesk Onay Botu Aktif! Haberler taranıyor...")
+
+async def buton_tiklama(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data.startswith("onay_"):
+        await query.edit_message_caption(caption=f"✅ **HABER ONAYLANDI VE YAYINLANDI!**\n\n{query.message.caption}")
+    elif query.data.startswith("pas_"):
+        await query.edit_message_caption(caption=f"❌ **Haber pas geçildi.**")
+
+# WebApp verisini hem WEB_APP_DATA hem de normal mesaj payload'ından yakalayan fonksiyon
+async def webapp_data_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    raw_data = None
+    if update.effective_message and update.effective_message.web_app_data:
+        raw_data = update.effective_message.web_app_data.data
+
+    if not raw_data:
+        return
+
+    print(f"[LOG] WebApp'ten gelen ham veri: {raw_data}")
+    data = json.loads(raw_data)
+    
+    yeni_baslik = data.get("baslik")
+    yeni_ozet = data.get("ozet")
+    msg_id_raw = data.get("msg_id")
+
+    # Aktif haber kaydını bul
+    haber = None
+    if msg_id_raw and str(msg_id_raw).isdigit():
+        haber = aktif_haberler.get(int(msg_id_raw))
+    
+    if not haber and len(aktif_haberler) > 0:
+        haber = list(aktif_haberler.values())[-1]
+
+    if haber:
+        haber["baslik"] = yeni_baslik
+        haber["ozet"] = yeni_ozet
+        
+        yeni_gorsel = gorsel_hazirla(haber["resim_url"], yeni_baslik, yeni_ozet, haber["kaynak_adi"])
+        
+        if yeni_gorsel:
+            p_baslik = urllib.parse.quote(yeni_baslik)
+            p_ozet = urllib.parse.quote(yeni_ozet)
+            webapp_url = f"{WEBAPP_BASE_URL}?baslik={p_baslik}&ozet={p_ozet}&msg_id={haber['msg_id']}"
+            
+            keyboard = [
+                [
+                    InlineKeyboardButton("✅ Onayla & Paylaş", callback_data=f"onay_{haber['id']}"),
+                    InlineKeyboardButton("❌ Pas Geç", callback_data=f"pas_{haber['id']}")
+                ],
+                [
+                    InlineKeyboardButton("✏️ Formda Düzenle", web_app=WebAppInfo(url=webapp_url)),
+                    InlineKeyboardButton("🔗 Kaynak", url=haber["link"])
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            with open(yeni_gorsel, 'rb') as photo:
+                yeni_mesaj = await context.bot.send_photo(
+                    chat_id=CHAT_ID,
+                    photo=photo,
+                    caption=f"✨ **GÖRSEL DÜZELTİLDİ!**\n\n**Başlık:** {yeni_baslik}\n**Özet:** {yeni_ozet}\n**Kaynak:** {haber['kaynak_adi']}",
+                    reply_markup=reply_markup
+                )
+                haber["msg_id"] = yeni_mesaj.message_id
+                aktif_haberler[yeni_mesaj.message_id] = haber
+
+async def haberleri_kontrol_et(context: ContextTypes.DEFAULT_TYPE):
+    for kaynak in HABER_KAYNAKLARI:
+        feed = feedparser.parse(kaynak["url"])
+        for entry in feed.entries[:2]:
+            haber_id = entry.link
+            
+            if haber_id not in gonderilen_haberler:
+                gonderilen_haberler.add(haber_id)
+                
+                baslik = entry.title
+                ozet = ozet_temizle(entry.get('summary', '') or entry.get('description', ''))
+                kaynak_adi = kaynak["ad"]
+                haber_linki = entry.link
+                
+                resim_url = haber_resmi_bul(entry)
+                olusturulan_gorsel = gorsel_hazirla(resim_url, baslik, ozet, kaynak_adi)
+                
+                if olusturulan_gorsel:
+                    p_baslik = urllib.parse.quote(baslik)
+                    p_ozet = urllib.parse.quote(ozet)
+                    webapp_url = f"{WEBAPP_BASE_URL}?baslik={p_baslik}&ozet={p_ozet}"
+
+                    keyboard = [
+                        [
+                            InlineKeyboardButton("✅ Onayla & Paylaş", callback_data=f"onay_{len(gonderilen_haberler)}"),
+                            InlineKeyboardButton("❌ Pas Geç", callback_data=f"pas_{len(gonderilen_haberler)}")
+                        ],
+                        [
+                            InlineKeyboardButton("✏️ Formda Düzenle", web_app=WebAppInfo(url=f"{webapp_url}&msg_id=TEMP")),
+                            InlineKeyboardButton("🔗 Kaynak", url=haber_linki)
+                        ]
+                    ]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+
+                    try:
+                        with open(olusturulan_gorsel, 'rb') as photo:
+                            sent_msg = await context.bot.send_photo(
+                                chat_id=CHAT_ID, 
+                                photo=photo, 
+                                caption=f"📰 **YENİ HABER DÜŞTÜ!**\n\n**Başlık:** {baslik}\n**Özet:** {ozet}\n**Kaynak:** {kaynak_adi}",
+                                reply_markup=reply_markup,
+                                read_timeout=30,
+                                write_timeout=30
+                            )
+                            
+                            real_webapp_url = f"{WEBAPP_BASE_URL}?baslik={p_baslik}&ozet={p_ozet}&msg_id={sent_msg.message_id}"
+                            keyboard[1][0] = InlineKeyboardButton("✏️ Formda Düzenle", web_app=WebAppInfo(url=real_webapp_url))
+                            await context.bot.edit_message_reply_markup(chat_id=CHAT_ID, message_id=sent_msg.message_id, reply_markup=InlineKeyboardMarkup(keyboard))
+
+                            aktif_haberler[sent_msg.message_id] = {
+                                "id": len(gonderilen_haberler),
+                                "msg_id": sent_msg.message_id,
+                                "baslik": baslik,
+                                "ozet": ozet,
+                                "resim_url": resim_url,
+                                "kaynak_adi": kaynak_adi,
+                                "link": haber_linki
+                            }
+                    except Exception as e:
+                        print(f"Gönderim hatası: {e}")
+
+def main():
+    t_request = HTTPXRequest(connect_timeout=30, read_timeout=30)
+    app = Application.builder().token(BOT_TOKEN).request(t_request).build()
+    
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(buton_tiklama))
+    # Hem status update hem de metin bazlı WebApp veri yakalayıcı
+    app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webapp_data_handler))
+
+    job_queue = app.job_queue
+    job_queue.run_repeating(haberleri_kontrol_et, interval=60, first=5)
+
+    print("AnlıkDesk Botu ve Görsel Motoru Çalışıyor...")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
