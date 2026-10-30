@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AnlıkDesk - Metin Düzenle</title>
+    <title>AnlıkDesk - Haber Seç ve Düzenle</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         body {
@@ -22,7 +22,7 @@
             color: #7f91a4;
             text-transform: uppercase;
         }
-        input, textarea {
+        select, input, textarea {
             width: 100%;
             padding: 12px;
             border-radius: 8px;
@@ -50,6 +50,13 @@
 </head>
 <body>
     <div class="form-group">
+        <label for="haberSecim">Düzenlenecek Haberi Seçin</label>
+        <select id="haberSecim" onchange="haberDegisti()">
+            <option value="">Yükleniyor...</option>
+        </select>
+    </div>
+
+    <div class="form-group">
         <label for="baslik">Haber Başlığı</label>
         <input type="text" id="baslik" placeholder="Başlık girin...">
     </div>
@@ -59,44 +66,71 @@
         <textarea id="ozet" placeholder="Özet girin..."></textarea>
     </div>
 
-    <button class="btn-submit" id="btnSubmit" onclick="gonder()">Görseli Yeniden Oluştur</button>
+    <button class="btn-submit" onclick="gonder()">Görseli Yeniden Oluştur</button>
 
     <script>
         const tg = window.Telegram.WebApp;
         tg.ready();
         tg.expand();
 
+        let haberlerVerisi = {};
+
+        // URL'den haber listenisini al
         const urlParams = new URLSearchParams(window.location.search);
-        document.getElementById('baslik').value = urlParams.get('baslik') || '';
-        document.getElementById('ozet').value = urlParams.get('ozet') || '';
+        const rawData = urlParams.get('data');
 
-        async function gonder() {
-            const btn = document.getElementById('btnSubmit');
-            btn.innerText = "Gönderiliyor...";
-            btn.disabled = true;
+        if (rawData) {
+            try {
+                haberlerVerisi = JSON.parse(decodeURIComponent(rawData));
+                const selectEl = document.getElementById('haberSecim');
+                selectEl.innerHTML = '';
 
+                const keys = Object.keys(haberlerVerisi);
+                if (keys.length === 0) {
+                    selectEl.innerHTML = '<option value="">Aktif haber bulunamadı</option>';
+                } else {
+                    keys.forEach((msgId, index) => {
+                        const h = haberlerVerisi[msgId];
+                        const opt = document.createElement('option');
+                        opt.value = msgId;
+                        opt.textContent = `[#${h.no}] ${h.baslik.substring(0, 35)}...`;
+                        selectEl.appendChild(opt);
+                    });
+                    // İlk haberi otomatik doldur
+                    haberDegisti();
+                }
+            } catch (e) {
+                console.error("Veri okuma hatası", e);
+            }
+        }
+
+        function haberDegisti() {
+            const selectEl = document.getElementById('haberSecim');
+            const secilenId = selectEl.value;
+            if (secilenId && haberlerVerisi[secilenId]) {
+                document.getElementById('baslik').value = haberlerVerisi[secilenId].baslik || '';
+                document.getElementById('ozet').value = haberlerVerisi[secilenId].ozet || '';
+            }
+        }
+
+        function gonder() {
+            const selectEl = document.getElementById('haberSecim');
+            const msgId = selectEl.value;
             const yeniBaslik = document.getElementById('baslik').value;
             const yeniOzet = document.getElementById('ozet').value;
-            const msgId = urlParams.get('msg_id') || '0';
 
-            const botToken = "9156283686:AAF-b7B8Nt2GP2SO7XT95xYBEVtvweowtVA";
-            const chatId = "1192631792";
-
-            // Doğrudan Bot API endpoint'i üzerinden özel bildirim gönderimi
-            const payloadData = {
-                chat_id: chatId,
-                text: `✏️ DÜZELTME TALEBİ\nMesaj ID: ${msgId}\nYeni Başlık: ${yeniBaslik}\nYeni Özet: ${yeniOzet}`
-            };
-
-            try {
-                await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payloadData)
-                });
-            } catch(e) {
-                console.error(e);
+            if (!msgId) {
+                alert("Lütfen düzenlenecek bir haber seçin!");
+                return;
             }
+
+            const payload = JSON.stringify({
+                msg_id: msgId,
+                baslik: yeniBaslik,
+                ozet: yeniOzet
+            });
+
+            tg.sendData(payload);
             tg.close();
         }
     </script>
