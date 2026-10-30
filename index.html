@@ -59,7 +59,7 @@
         <textarea id="ozet" placeholder="Özet girin..."></textarea>
     </div>
 
-    <button class="btn-submit" onclick="gonder()">Görseli Yeniden Oluştur</button>
+    <button class="btn-submit" id="btnSubmit" onclick="gonder()">Görseli Yeniden Oluştur</button>
 
     <script>
         const tg = window.Telegram.WebApp;
@@ -81,7 +81,11 @@
                 msg_id: msgId
             });
 
-            tg.sendData(payload);
+            try {
+                tg.sendData(payload);
+            } catch(e) {
+                alert("Hata oluştu: " + e.message);
+            }
             tg.close();
         }
     </script>
