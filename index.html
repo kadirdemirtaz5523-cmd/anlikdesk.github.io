@@ -66,14 +66,28 @@
         tg.ready();
         tg.expand();
 
+        // URL Parametrelerini Çek
         const urlParams = new URLSearchParams(window.location.search);
+        
+        // Form alanlarını doldur
         document.getElementById('baslik').value = urlParams.get('baslik') || '';
         document.getElementById('ozet').value = urlParams.get('ozet') || '';
 
         function gonder() {
             const yeniBaslik = document.getElementById('baslik').value;
             const yeniOzet = document.getElementById('ozet').value;
-            const msgId = urlParams.get('msg_id') || '0';
+            
+            // MSG ID değerini URL'den garanti şekilde al
+            let msgId = urlParams.get('msg_id');
+            if (!msgId || msgId === '0' || msgId === 'null') {
+                // Alternatif URL arama
+                const match = window.location.href.match(/msg_id=(\d+)/);
+                if (match) {
+                    msgId = match[1];
+                } else {
+                    msgId = '0';
+                }
+            }
 
             const payload = JSON.stringify({
                 baslik: yeniBaslik,
